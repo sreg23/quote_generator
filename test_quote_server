@@ -1,0 +1,80 @@
+import unittest
+from unittest.mock import patch
+import zmq
+import threading
+import time
+import quote_server  # Ensure this file is in the same directory
+
+class TestQuoteServer(unittest.TestCase):
+    # Class variables to be initialized later
+    context = None
+    client_socket = None
+    server_thread = None
+
+    @classmethod
+    def setUpClass(cls):
+        """Set up the ZeroMQ context, client socket, and start the server before any tests run."""
+        # Initialize ZeroMQ context
+        cls.context = zmq.Context()
+        
+        # Create a REQ (request) socket for the client
+        cls.client_socket = cls.context.socket(zmq.REQ)
+        
+        # Connect the client socket to the server (on a different port for testing)
+        cls.client_socket.connect("tcp://localhost:5556")  # Use a different port for testing
+
+        # Start the server in a separate thread
+        cls.server_thread = threading.Thread(target=quote_server.start_server, args=("tcp://*:5556",))
+        cls.server_thread.daemon = True
+        cls.server_thread.start()
+        
+        # Give the server a moment to start
+        time.sleep(1)
+
+    @classmethod
+    def tearDownClass(cls):
+        """Tear down the ZeroMQ context and client socket after all tests have run."""
+        cls.client_socket.close()  # Close the client socket
+        cls.context.term()         # Terminate the ZeroMQ context
+
+    @patch('quote_server.get_random_quote')
+    def test_get_random_quote(self, mock_get_random_quote):
+        """Test that a random quote is correctly returned."""
+        # Set the return value of the mocked get_random_quote function
+        mock_get_random_quote.return_value = "This is a test quote."
+        
+        # Send a request for a quote
+        self.client_socket.send_string("REQUEST_QUOTE")
+        
+        # Receive the response from the server
+        response = self.client_socket.recv_string()
+        
+        # Assert that the response matches the mocked quote
+        self.assertEqual(response, "This is a test quote.")
+
+    def test_unknown_request(self):
+        """Test that an unknown request returns the correct error message."""
+        # Send an unknown request to the server
+        self.client_socket.send_string("UNKNOWN_REQUEST")
+        
+        # Receive the response from the server
+        response = self.client_socket.recv_string()
+        
+        # Assert that the response is the expected error message
+        self.assertEqual(response, "Unknown request")
+
+    @patch('quote_server.get_random_quote', side_effect=Exception("Test exception"))
+    def test_server_error(self, mock_get_random_quote):
+        """Test that the server handles exceptions correctly."""
+        # The mock_get_random_quote parameter is used here to simulate an exception
+        self.client_socket.send_string("REQUEST_QUOTE")
+        
+        # Receive the response from the server
+        response = self.client_socket.recv_string()
+        
+        # Assert that the response starts with the error message
+        self.assertTrue(response.startswith("An error occurred"))
+
+if __name__ == '__main__':
+    # Run the unit tests
+    unittest.main()
