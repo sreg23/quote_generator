@@ -1,0 +1,81 @@
+import zmq
+import random
+
+# List of inspirational quotes
+quotes = [
+    "The best way to get started is to quit talking and begin doing. - Walt Disney",
+    "The pessimist sees difficulty in every opportunity. The optimist sees opportunity in every difficulty. - Winston Churchill",
+    "Don't let yesterday take up too much of today. - Will Rogers",
+    "You learn more from failure than from success. Don't let it stop you. Failure builds character. - Unknown",
+    "It's not whether you get knocked down, it's whether you get up. - Vince Lombardi",
+    "If you are working on something that you really care about, you don't have to be pushed. The vision pulls you. - Steve Jobs",
+    "People who are crazy enough to think they can change the world, are the ones who do. - Rob Siltanen",
+    "Failure will never overtake me if my determination to succeed is strong enough. - Og Mandino",
+    "Entrepreneurs are great at dealing with uncertainty and also very good at minimizing risk. That's the classic entrepreneur. - Mohnish Pabrai",
+    "We may encounter many defeats but we must not be defeated. - Maya Angelou"
+]
+
+# Initialize ZeroMQ context
+context = zmq.Context()
+
+def get_random_quote():
+    """Select a random quote from the list of quotes, ensuring no repeats until all quotes are used."""
+    global displayed_quotes
+    
+    # If all quotes have been displayed, clear the set to start over
+    if len(displayed_quotes) == len(quotes):
+        displayed_quotes.clear()
+    
+    # Determine which quotes are still available
+    available_quotes = list(set(quotes) - displayed_quotes)
+    
+    # Randomly select a quote from the available quotes
+    quote = random.choice(available_quotes)
+    
+    # Mark the selected quote as displayed
+    displayed_quotes.add(quote)
+    
+    return quote
+
+def start_server(address="tcp://*:5555"):
+    """Start the ZeroMQ server to respond with random quotes."""
+    # Create a REP (reply) socket
+    socket = context.socket(zmq.REP)
+    
+    # Bind the socket to the given address
+    socket.bind(address)
+
+    global displayed_quotes
+    displayed_quotes = set()
+
+    print(f"Quote server is running on {address}...")
+
+    # Continuously listen for incoming messages
+    while True:
+        try:
+            # Receive a message from the client
+            message = socket.recv_string()
+            print(f"Received message: {message}")
+            
+            # Check if the message is a request for a quote
+            if message == "REQUEST_QUOTE":
+                # Get a random quote
+                quote = get_random_quote()
+                print(f"Sending quote: {quote}")
+                
+                # Send the quote back to the client
+                socket.send_string(quote)
+            else:
+                # If the message is not recognized, send an error message
+                error_message = "Unknown request"
+                print(f"Sending error: {error_message}")
+                socket.send_string(error_message)
+        except Exception as e:
+            # Handle any exceptions that occur
+            error_message = f"An error occurred: {str(e)}"
+            print(error_message)
+            socket.send_string(error_message)
+
+if __name__ == "__main__":
+    # Start the server if this script is run directly
+    start_server()
