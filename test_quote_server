@@ -1,0 +1,46 @@
+import quote_server  
+
+class TestQuoteServer(unittest.TestCase):
+    context = None
+    client_socket = None
+    server_thread = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.context = zmq.Context()
+        cls.client_socket = cls.context.socket(zmq.REQ)
+        cls.client_socket.connect("tcp://localhost:5556")  # Use a different port for testing
+
+        # Start the server in a separate thread
+        cls.server_thread = threading.Thread(target=quote_server.start_server, args=("tcp://*:5556",))
+        cls.server_thread.daemon = True
+        cls.server_thread.start()
+        time.sleep(1)  # Give the server a moment to start
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.client_socket.close()
+        cls.context.term()
+
+    @patch('quote_server.get_random_quote')
+    def test_get_random_quote(self, mock_get_random_quote):
+        mock_get_random_quote.return_value = "This is a test quote."
+        self.client_socket.send_string("REQUEST_QUOTE")
+        response = self.client_socket.recv_string()
+        self.assertEqual(response, "This is a test quote.")
+
+    def test_unknown_request(self):
+        self.client_socket.send_string("UNKNOWN_REQUEST")
+        response = self.client_socket.recv_string()
+        self.assertEqual(response, "Unknown request")
+
+    @patch('quote_server.get_random_quote', side_effect=Exception("Test exception"))
+    def test_server_error(self, mock_get_random_quote):
+        # The mock_get_random_quote parameter is used here to simulate an exception
+        self.client_socket.send_string("REQUEST_QUOTE")
+        response = self.client_socket.recv_string()
+        self.assertTrue(response.startswith("An error occurred"))
+
+if __name__ == '__main__':
+    unittest.main()
+
